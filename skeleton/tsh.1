@@ -1,0 +1,40 @@
+.\" Process this file with
+.\" groff -man -Tascii tsh.1
+.\"
+.TH TSH 1 "OCTOBER 2009" "NU EECS 343" "NU EECS 343 - Operating Systems - Fall 2009"
+.SH NAME
+tsh \- A tiny shell
+.SH SYNOPSIS
+.B tsh
+.SH DESCRIPTION
+.B tsh
+is a very basic shell implementation.  It has three built-in commands, described below.  All other commands
+entered are assumed to be references to some exectuable file, which tsh attempts to find by searching
+the directories specified in the PATH environment variable.  If it can find a file in the path, it forks 
+a child process and executes the file there.  Otherwise it reports an error message.  
+.SH BUILT-IN COMMANDS
+.IP exit
+Quit tsh
+.IP cd directory
+Changes the current working directory to directory.
+.IP VAR=value
+Updates the value of the environment variable VAR to be value.
+.SH DESIGN APPROACH
+I took the path of least resistance and used the test cases to guide my development.  Most of the work went
+into implementing functions specified in runtime.c, with a few changes to interpreter.c.  Child processes, once
+they have been located, are forked in the Exec function.  The shell process then goes into a loop waiting for
+SIGCHLD signals; the signal handler calls reap_children, which reaps all available child processes.  If the foreground
+process is reaped, the global variable fgpid is set to -1, which causes the parent process to continue.
+
+I changed the error message to satisfy test 7 as suggested in the Google group, and although test 11 fails I
+assumed that was ok as indicated there.
+
+I did a small amount of work toward extra credit.  Environment variables can be set and accessed (vie $VAR), and the
+shell will open and execute commands form ~/.tshrc.  However, the output from ~/.tshrc is not suppressed and errors are not
+handled nicely.  And I didn't do any work on the fancy prompt stuff.  I implemented the environment variables
+through the built-in command infrastructure instead of the interpreter.
+
+.SH AUTHOR
+Burke Fetscher
+baf111
+burke.fetscher@eecs.northwestern.edu
