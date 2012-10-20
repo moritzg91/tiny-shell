@@ -73,7 +73,9 @@
 typedef struct bgjob_l
 {
   pid_t pid;
+  bool done;
   struct bgjob_l* next;
+  char *cmdline;
 } bgjobL;
 
 /* the pids of the background processes */
@@ -360,7 +362,7 @@ Exec(commandT* cmd, bool forceFork, bool bg)
   } else {
     // parent process
     if (bg) {
-      addbgjob(pid);
+      addbgjob(pid, cmd);
       sigprocmask(SIG_UNBLOCK, &mask, NULL);
     } else {
       fgpid = pid;
@@ -448,6 +450,31 @@ RunBuiltInCmd(commandT* cmd)
 void
 CheckJobs()
 {
+  bgjobL *current;
+  bgjobL *prev;
+  bgjobL *temp;
+  int i;
+  current = bgjobs;
+  prev = NULL;
+  i = 1;
+  while (current != NULL) {
+    if (current->done) {
+      if (prev == NULL) {
+	bgjobs = current->next;
+      } else {
+	prev->next = current->next;
+      }
+      temp = current->next;
+      printf("[%d]   Done                    %s\n", i, current->cmdline);
+      free(current->cmdline);
+      free(current);
+      current = temp;
+    } else {
+      prev = current;
+      current = current->next;
+    }
+    i++;
+  }
 } /* CheckJobs */
 
 /*
@@ -510,33 +537,35 @@ freepath(char** path)
 
 /* add a bg job to the list */
 void
-addbgjob(pid_t pid)
+addbgjob(pid_t pid, commandT* cmd)
 {
   bgjobL *oldbgjobs = bgjobs;
+  int i;
+  int cmdlinelen = 1;
   bgjobs = (bgjobL *)malloc(sizeof(bgjobL));
   bgjobs->pid = pid;
+  bgjobs->done = 0;
   bgjobs->next = oldbgjobs;
+  for (i = 0; i < cmd->argc; i++) {
+    cmdlinelen += strlen(cmd->argv[i]);
+  }
+  bgjobs->cmdline = (char *)malloc(sizeof(char) * (cmdlinelen + cmd->argc));
+  strcpy(bgjobs->cmdline, cmd->argv[0]);
+  for (i = 1; i < cmd->argc; i++) {
+    strcat(bgjobs->cmdline, " ");
+    strcat(bgjobs->cmdline, cmd->argv[i]);
+  }
 }
 /* remove a bg job from the list */
 void
 removebgjob(pid_t pid)
 {
   bgjobL *current;
-  bgjobL *prev;
   current = bgjobs;
-  prev = NULL;
   while (current != NULL) {
     if (current->pid == pid) {
-      if (prev == NULL) {
-	bgjobs = current->next;
-      } else {
-	prev->next = current->next;
-      }
-      free(current);
-      break;
-    } else {
-      prev = current;
-      current = current->next;
+      current->done = 1;
     }
+    current = current->next;
   }
 }

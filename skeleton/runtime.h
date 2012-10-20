@@ -200,7 +200,7 @@ IntFgProc();
 
 /* add a bg job to the list */
 EXTERN void
-addbgjob(pid_t);
+addbgjob(pid_t, commandT*);
 /* remove a bg job from the list */
 EXTERN void
 removebgjob(pid_t);
