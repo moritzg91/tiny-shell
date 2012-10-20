@@ -104,6 +104,12 @@ getpath(char*);
 /* frees the above array */
 static void 
 freepath(char**);
+/* add a bg job to the list */
+static void
+addbgjob(int);
+/* remove a bg job from the list */
+static void
+removebgjob(int);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -122,6 +128,10 @@ freepath(char**);
 void
 RunCmd(commandT* cmd)
 {
+  int i;
+  for (i = 0; i < cmd->argc; i++) {
+    printf("argv[i] = %s\n", cmd->argv[i]);
+  }
   RunCmdFork(cmd, TRUE);
 } /* RunCmd */
 
@@ -494,4 +504,37 @@ freepath(char** path)
   while (path[i] != NULL)
     free(path[i++]);
   free(path);
+}
+
+/* add a bg job to the list */
+static void
+addbgjob(pid_t pid)
+{
+  bgjobL *oldbgjobs = bgjobs;
+  bgjobs = (bgjobL *)malloc(sizeof(bgjobL));
+  bgjobs->pid = pid;
+  bgjobs->next = oldbgjobs;
+}
+/* remove a bg job from the list */
+static void
+removebgjob(pid_t pid)
+{
+  bgjobL *current;
+  bgjobL *prev;
+  current = bgjobs;
+  prev = NULL;
+  while (current != NULL) {
+    if (current->pid == pid) {
+      if (prev == NULL) {
+	bgjobs = current->next;
+      } else {
+	prev->next = current->next;
+      }
+      free(current);
+      break;
+    } else {
+      prev = current;
+      current = current->next;
+    }
+  }
 }
