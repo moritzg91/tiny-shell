@@ -147,6 +147,7 @@ reap_children()
       // if fg process has stopped, update fgpid
       if (pid == fgpid)
 	fgpid = -1;
+      removebgjob(pid);
     } while (pid > 0);
 } /*reap_children */
 

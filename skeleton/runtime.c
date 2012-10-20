@@ -91,7 +91,7 @@ static bool
 ResolveExternalCmd(commandT*, char**);
 /* forks and runs a external program */
 static void
-Exec(commandT*, bool);
+Exec(commandT*, bool, bool);
 /* runs a builtin command */
 static void
 RunBuiltInCmd(commandT*);
@@ -104,12 +104,6 @@ getpath(char*);
 /* frees the above array */
 static void 
 freepath(char**);
-/* add a bg job to the list */
-static void
-addbgjob(int);
-/* remove a bg job from the list */
-static void
-removebgjob(int);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -128,10 +122,6 @@ removebgjob(int);
 void
 RunCmd(commandT* cmd)
 {
-  int i;
-  for (i = 0; i < cmd->argc; i++) {
-    printf("argv[i] = %s\n", cmd->argv[i]);
-  }
   RunCmdFork(cmd, TRUE);
 } /* RunCmd */
 
@@ -284,9 +274,16 @@ static void
 RunExternalCmd(commandT* cmd, bool fork)
 {
   char** path = getpath(cmd->argv[0]);
+  bool bg = 0;
+  if (strcmp(cmd->argv[cmd->argc - 1],"&") == 0) {
+    free(cmd->argv[cmd->argc - 1]);
+    cmd->argv[cmd->argc - 1] = NULL;
+    cmd->argc = cmd->argc - 1;
+    bg = 1;
+  }
   if (ResolveExternalCmd(cmd, path))
     {
-      Exec(cmd, fork);
+      Exec(cmd, fork, bg);
     }
   else
     {
@@ -337,13 +334,14 @@ ResolveExternalCmd(commandT* cmd, char** path)
  * arguments:
  *   commandT *cmd: the command to be run
  *   bool forceFork: whether to fork
+ *   bool bg: run in bg or not
  *
  * returns: none
  *
  * Executes an external command.
  */
 static void
-Exec(commandT* cmd, bool forceFork)
+Exec(commandT* cmd, bool forceFork, bool bg)
 {
   int pid;
   sigset_t mask;
@@ -361,10 +359,14 @@ Exec(commandT* cmd, bool forceFork)
     execv(cmd->path, cmd->argv);
   } else {
     // parent process
-    fgpid = pid;
-    sigprocmask(SIG_UNBLOCK, &mask, NULL);
-    // wait for completion
-    while(fgpid != -1) sleep(1);
+    if (bg) {
+      addbgjob(pid);
+      sigprocmask(SIG_UNBLOCK, &mask, NULL);
+    } else {
+      fgpid = pid;
+      sigprocmask(SIG_UNBLOCK, &mask, NULL);
+      while(fgpid != -1) sleep(1);
+    }
   }
 } /* Exec */
 
@@ -507,7 +509,7 @@ freepath(char** path)
 }
 
 /* add a bg job to the list */
-static void
+void
 addbgjob(pid_t pid)
 {
   bgjobL *oldbgjobs = bgjobs;
@@ -516,7 +518,7 @@ addbgjob(pid_t pid)
   bgjobs->next = oldbgjobs;
 }
 /* remove a bg job from the list */
-static void
+void
 removebgjob(pid_t pid)
 {
   bgjobL *current;

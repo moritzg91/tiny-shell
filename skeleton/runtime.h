@@ -197,6 +197,13 @@ CheckJobs();
  ***********************************************************************/
 EXTERN void
 IntFgProc();
+
+/* add a bg job to the list */
+EXTERN void
+addbgjob(pid_t);
+/* remove a bg job from the list */
+EXTERN void
+removebgjob(pid_t);
 /************External Declaration*****************************************/
 
 /**************Definition***************************************************/
