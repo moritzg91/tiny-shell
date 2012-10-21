@@ -465,7 +465,8 @@ CheckJobs()
 	prev->next = current->next;
       }
       temp = current->next;
-      printf("[%d]   Done                    %s\n", i, current->cmdline);
+      printf("[%d]   %-24s%s\n", i, "Done", current->cmdline);
+      fflush(stdout);
       free(current->cmdline);
       free(current);
       current = temp;

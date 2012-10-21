@@ -1,7 +1,7 @@
 ###############################################################################
 #
 # File:         Makefile
-# RCS:          $Id: Makefile,v 1.3 2009/10/12 19:10:53 jot836 Exp $
+# RCS:          $Id: Makefile,v 1.2 2005/10/14 03:52:59 sbirrer Exp $
 # Description:  Guess
 # Author:       Fabian E. Bustamante
 #               Northwestern Systems Research Group
@@ -18,7 +18,7 @@
 ###############################################################################
 
 # handin info
-TEAM = "baf111"
+TEAM = `whoami`
 VERSION = `date +%Y%m%d%H%M%S`
 PROJ = tsh
 
@@ -29,10 +29,9 @@ RM = rm
 MKDIR = mkdir
 TAR = tar cvf
 COMPRESS = gzip
-#CFLAGS = -g -Wall -O2 -D HAVE_CONFIG_H
-CFLAGS = -ggdb -Wall -D HAVE_CONFIG_H
+CFLAGS = -g -Wall -O2 -D HAVE_CONFIG_H
 
-DELIVERY = Makefile *.h *.c tsh.1
+DELIVERY = Makefile *.h *.c
 PROGS = tsh
 SRCS = interpreter.c io.c runtime.c tsh.c 
 OBJS = ${SRCS:.c=.o}
@@ -43,7 +42,7 @@ test-reg: handin
 	HANDIN=`pwd`/${TEAM}-${VERSION}-${PROJ}.tar.gz;\
 	cd testsuite;\
 	sh ./run_testcase.sh $${HANDIN};
-
+	
 handin: cleanAll
 	${TAR} ${TEAM}-${VERSION}-${PROJ}.tar ${DELIVERY}
 	${COMPRESS} ${TEAM}-${VERSION}-${PROJ}.tar
