@@ -95,6 +95,8 @@ Interpret(char* cmdLine)
 {
 
   commandT* cmd = getCommand(cmdLine);
+  cmd->cmdline = (char *)malloc(sizeof(char) * (strlen(cmdLine) + 1));
+  strcpy(cmd->cmdline, cmdLine); 
 
   RunCmd(cmd);
   
@@ -271,5 +273,6 @@ freeCommand(commandT* cmd)
     }
   if (cmd->path != NULL)
     free(cmd->path);
+  free(cmd->cmdline);
   free(cmd);
 } /* freeCommand */

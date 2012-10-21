@@ -73,6 +73,7 @@
 typedef struct bgjob_l
 {
   pid_t pid;
+  int jobid;
   bool done;
   struct bgjob_l* next;
   char *cmdline;
@@ -461,10 +462,8 @@ CheckJobs()
   bgjobL *current;
   bgjobL *prev;
   bgjobL *temp;
-  int i;
   current = bgjobs;
   prev = NULL;
-  i = 1;
   while (current != NULL) {
     if (current->done) {
       if (prev == NULL) {
@@ -473,7 +472,7 @@ CheckJobs()
 	prev->next = current->next;
       }
       temp = current->next;
-      printf("[%d]   %-24s%s\n", i, "Done", current->cmdline);
+      printf("[%d]   %-24s%s\n", current->jobid, "Done", current->cmdline);
       fflush(stdout);
       free(current->cmdline);
       free(current);
@@ -482,7 +481,6 @@ CheckJobs()
       prev = current;
       current = current->next;
     }
-    i++;
   }
 } /* CheckJobs */
 
@@ -551,26 +549,25 @@ addbgjob(pid_t pid, commandT* cmd)
   bgjobL *lastbgjob = bgjobs;
   bgjobL *newjob = (bgjobL *)malloc(sizeof(bgjobL));
   newjob->next = NULL;
+  int maxjobid = 0;
   if (lastbgjob == NULL) {
     bgjobs = newjob;
   } else {
-    while (lastbgjob->next != NULL)
+    maxjobid = lastbgjob->jobid;
+    while (lastbgjob->next != NULL) {
+      if (lastbgjob->jobid > maxjobid)
+	maxjobid = lastbgjob->jobid;
       lastbgjob = lastbgjob->next;
+    }
     lastbgjob->next = newjob;
   }
-  int i;
-  int cmdlinelen = 1;
   newjob->pid = pid;
   newjob->done = 0;
-  for (i = 0; i < cmd->argc; i++) {
-    cmdlinelen += strlen(cmd->argv[i]);
-  }
-  newjob->cmdline = (char *)malloc(sizeof(char) * (cmdlinelen + cmd->argc));
-  strcpy(newjob->cmdline, cmd->argv[0]);
-  for (i = 1; i < cmd->argc; i++) {
-    strcat(newjob->cmdline, " ");
-    strcat(newjob->cmdline, cmd->argv[i]);
-  }
+  newjob->jobid = maxjobid + 1;
+  newjob->cmdline = (char *)malloc(sizeof(char) * (1 + strlen(cmd->cmdline)));
+  strcpy(newjob->cmdline, cmd->cmdline);
+  int cmdlinelen = strlen(newjob->cmdline);
+  newjob->cmdline[cmdlinelen - 2] = '\0';
 }
 /* remove a bg job from the list */
 void
@@ -590,15 +587,14 @@ removebgjob(pid_t pid)
 static void
 showjobs()
 {
-  int i = 1;
   bgjobL *job = bgjobs;
   while (job != NULL) {
     printf("[%d]   %-24s%s%s\n", 
-	   i, 
+	   job->jobid, 
 	   (job->done ? "Done" : "Running"), 
 	   job->cmdline,
 	   (job->done ? "" : " &"));
-    i++;
     job = job->next;
   }
+  fflush(stdout);
 }

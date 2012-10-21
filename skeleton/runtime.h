@@ -60,6 +60,7 @@ typedef struct command_t
 {
   char* name;
   char* path;
+  char* cmdline;
   int argc;
   char* argv[];
 } commandT;
