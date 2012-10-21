@@ -87,14 +87,16 @@ main(int argc, char *argv[])
       /* read command line */
       getCommandLine(&cmdLine, BUFSIZE);
 
-      /* checks the status of background jobs */
-      CheckJobs();
 
       if (strcmp(cmdLine, "exit") == 0) {
 	//printf("quitting...\n");
         forceExit = TRUE;
+	fflush(stdout);
 	continue;
       }
+
+      /* checks the status of background jobs */
+      CheckJobs();
  
       /* interpret command and line
        * includes executing of commands */

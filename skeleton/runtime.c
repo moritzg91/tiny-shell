@@ -106,6 +106,9 @@ getpath(char*);
 /* frees the above array */
 static void 
 freepath(char**);
+/* display the jobs list */
+static void
+showjobs();
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -391,6 +394,8 @@ IsBuiltIn(char* cmd)
   char *cmdtoks;
   if (strcmp(cmd, "cd") == 0)
     return TRUE;
+  if (strcmp(cmd, "jobs") == 0)
+    return TRUE;
   cmdtoks = (char *)malloc(sizeof(char) * (1 + strlen(cmd)));
   strcpy(cmdtoks, cmd);
   if (strtok(cmdtoks, "=") != NULL &&
@@ -427,7 +432,10 @@ RunBuiltInCmd(commandT* cmd)
 	chdir(cmd->argv[1]);
       else
 	chdir(getenv("HOME"));
-    }
+  }
+
+  if (strcmp(cmd->argv[0], "jobs") == 0)
+    showjobs();
 
   // do environment update if it has the right form
   envvar = strtok(cmdtoks, "=");
@@ -540,21 +548,28 @@ freepath(char** path)
 void
 addbgjob(pid_t pid, commandT* cmd)
 {
-  bgjobL *oldbgjobs = bgjobs;
+  bgjobL *lastbgjob = bgjobs;
+  bgjobL *newjob = (bgjobL *)malloc(sizeof(bgjobL));
+  newjob->next = NULL;
+  if (lastbgjob == NULL) {
+    bgjobs = newjob;
+  } else {
+    while (lastbgjob->next != NULL)
+      lastbgjob = lastbgjob->next;
+    lastbgjob->next = newjob;
+  }
   int i;
   int cmdlinelen = 1;
-  bgjobs = (bgjobL *)malloc(sizeof(bgjobL));
-  bgjobs->pid = pid;
-  bgjobs->done = 0;
-  bgjobs->next = oldbgjobs;
+  newjob->pid = pid;
+  newjob->done = 0;
   for (i = 0; i < cmd->argc; i++) {
     cmdlinelen += strlen(cmd->argv[i]);
   }
-  bgjobs->cmdline = (char *)malloc(sizeof(char) * (cmdlinelen + cmd->argc));
-  strcpy(bgjobs->cmdline, cmd->argv[0]);
+  newjob->cmdline = (char *)malloc(sizeof(char) * (cmdlinelen + cmd->argc));
+  strcpy(newjob->cmdline, cmd->argv[0]);
   for (i = 1; i < cmd->argc; i++) {
-    strcat(bgjobs->cmdline, " ");
-    strcat(bgjobs->cmdline, cmd->argv[i]);
+    strcat(newjob->cmdline, " ");
+    strcat(newjob->cmdline, cmd->argv[i]);
   }
 }
 /* remove a bg job from the list */
@@ -568,5 +583,22 @@ removebgjob(pid_t pid)
       current->done = 1;
     }
     current = current->next;
+  }
+}
+
+
+static void
+showjobs()
+{
+  int i = 1;
+  bgjobL *job = bgjobs;
+  while (job != NULL) {
+    printf("[%d]   %-24s%s%s\n", 
+	   i, 
+	   (job->done ? "Done" : "Running"), 
+	   job->cmdline,
+	   (job->done ? "" : " &"));
+    i++;
+    job = job->next;
   }
 }

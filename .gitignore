@@ -3,3 +3,4 @@
 *.gz
 *.o
 tsh
+.nfs*
