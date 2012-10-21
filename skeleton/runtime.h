@@ -112,24 +112,15 @@ EXTERN void
 RunCmdPipe(commandT*, commandT*);
 
 /***********************************************************************
- *  Title: Runs two command with output redirection
+ *  Title: Redirects I/O if necessary
  * ---------------------------------------------------------------------
- *    Purpose: Runs a command and redirects the output to a file.
- *    Input: a command structure structure and a file name
+ *    Purpose: Reads cmd->argv, redirecting I/O if a redirection operator is found,
+               and removes the redirection from cmd->argv.
+ *    Input: a commandT structure
  *    Output: void
  ***********************************************************************/
 EXTERN void
-RunCmdRedirOut(commandT*, char*);
-
-/***********************************************************************
- *  Title: Runs two command with input redirection
- * ---------------------------------------------------------------------
- *    Purpose: Runs a command and redirects the input to a file.
- *    Input: a command structure structure and a file name
- *    Output: void
- ***********************************************************************/
-EXTERN void
-RunCmdRedirIn(commandT*, char*);
+RedirIO(commandT*);
 
 /***********************************************************************
  *  Title: Stop the foreground process

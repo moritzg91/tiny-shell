@@ -226,37 +226,55 @@ RunCmdPipe(commandT* cmd1, commandT* cmd2)
 
 
 /*
- * RunCmdRedirOut
+ * RedirIO
  *
  * arguments:
  *   commandT *cmd: the command to be run
- *   char *file: the file to be used for standard output
  *
  * returns: none
  *
- * Runs a command, redirecting standard output to a file.
+ * Extracts redirection operators from argv[] and adjusts input/output files accordingly
  */
 void
-RunCmdRedirOut(commandT* cmd, char* file)
+RedirIO(commandT* cmd)
 {
-} /* RunCmdRedirOut */
-
-
-/*
- * RunCmdRedirIn
- *
- * arguments:
- *   commandT *cmd: the command to be run
- *   char *file: the file to be used for standard input
- *
- * returns: none
- *
- * Runs a command, redirecting a file to standard input.
- */
-void
-RunCmdRedirIn(commandT* cmd, char* file)
-{
-}  /* RunCmdRedirIn */
+  int i;
+  // check argv for '<' or '>' operators
+  for (i=0; i < (cmd->argc - 1); i++) {
+    if ((strcmp(cmd->argv[i],">") == 0) || (strcmp(cmd->argv[i],"<") == 0)) {
+      char redirOp = cmd->argv[i][0];
+      char* file = malloc(sizeof(char*)*strlen(cmd->argv[i+1])+1);
+      strcpy(file,cmd->argv[i+1]);
+      // remove the redirection from argv[]
+      int j;
+      for (j = i; (j+2) < (cmd->argc); j++) {
+        cmd->argv[j] = cmd->argv[j+2];
+      }
+      cmd->argv[j] = NULL;
+      cmd->argv[j+1] = NULL;
+      cmd->argc -= 2;
+      i -= 1;
+      // redirect stream to file*
+      int fid;
+      if (redirOp == '<') {
+        fid = open(file, O_RDONLY);
+        close(0);
+        dup(fid);
+        close(fid);
+      } else if (redirOp == '>') {
+        fid = open(file, O_WRONLY | O_CREAT);
+        close(1);
+        dup(fid);
+        close(fid);
+      }
+      else {
+        printf("%s: can't redirect to this file.",file);
+      }
+      free(file);
+    }
+  }
+  return;
+} /* RedirIO */
 
 /*
  * IntFgProc
@@ -373,6 +391,9 @@ Exec(commandT* cmd, bool forceFork, bool bg)
   if (pid == 0) {
     // child process (change pg id so int signals are only sent to the shell)
     setpgid(0,0);
+    // redirect I/O if necessary
+    RedirIO(cmd);
+    // exec the command
     execv(cmd->path, cmd->argv);
   } else {
     // parent process
