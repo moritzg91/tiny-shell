@@ -56,20 +56,8 @@
 #define VAREXTERN(x, y) extern x;
 #endif
 
-<<<<<<< HEAD
-typedef struct command_t
-{
-  char* name;
-  char* path;
-  char* cmdline;
-  int argc;
-  char* argv[];
-} commandT;
-
 typedef enum { RUNNING, DONE, FG, FGDONE, STOPPED } state_t;
 
-=======
->>>>>>> added alias/unalias builtin
 /************Global Variables*********************************************/
 
 pid_t fgpid;
@@ -197,16 +185,11 @@ IntFgProc();
 
 /* remove a bg job from the list */
 EXTERN void
-<<<<<<< HEAD
 removebgjob(pid_t, state_t);
-=======
-removebgjob(pid_t);
 
 // handles the logic of the alias builtin
 void
 RunAliasCmd(commandT*, bool);
-
->>>>>>> added alias/unalias builtin
 /************External Declaration*****************************************/
 
 /**************Definition***************************************************/
