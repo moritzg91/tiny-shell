@@ -70,11 +70,14 @@
 
 #define NBUILTINCOMMANDS (sizeof BuiltInCommands / sizeof(char*))
 
+typedef enum { RUNNING, DONE, FG, FGDONE } state_t;
+
+
 typedef struct bgjob_l
 {
   pid_t pid;
   int jobid;
-  bool done;
+  state_t state;
   struct bgjob_l* next;
   char *cmdline;
 } bgjobL;
@@ -110,6 +113,12 @@ freepath(char**);
 /* display the jobs list */
 static void
 showjobs();
+/* foreground a specific job by job id */
+static void
+foregroundjob(int);
+/* wait for the fg job to finish */
+static void
+waitforfg();
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -371,7 +380,7 @@ Exec(commandT* cmd, bool forceFork, bool bg)
     } else {
       fgpid = pid;
       sigprocmask(SIG_UNBLOCK, &mask, NULL);
-      while(fgpid != -1) sleep(1);
+      waitforfg(pid);
     }
   }
 } /* Exec */
@@ -396,6 +405,8 @@ IsBuiltIn(char* cmd)
   if (strcmp(cmd, "cd") == 0)
     return TRUE;
   if (strcmp(cmd, "jobs") == 0)
+    return TRUE;
+  if (strcmp(cmd, "fg") == 0)
     return TRUE;
   cmdtoks = (char *)malloc(sizeof(char) * (1 + strlen(cmd)));
   strcpy(cmdtoks, cmd);
@@ -437,6 +448,8 @@ RunBuiltInCmd(commandT* cmd)
 
   if (strcmp(cmd->argv[0], "jobs") == 0)
     showjobs();
+  if (strcmp(cmd->argv[0], "fg") == 0)
+    foregroundjob(atoi(cmd->argv[1]));
 
   // do environment update if it has the right form
   envvar = strtok(cmdtoks, "=");
@@ -465,14 +478,15 @@ CheckJobs()
   current = bgjobs;
   prev = NULL;
   while (current != NULL) {
-    if (current->done) {
+    if (current->state == DONE || current->state == FGDONE) {
       if (prev == NULL) {
 	bgjobs = current->next;
       } else {
 	prev->next = current->next;
       }
       temp = current->next;
-      printf("[%d]   %-24s%s\n", current->jobid, "Done", current->cmdline);
+      if (current->state == DONE) 
+	printf("[%d]   %-24s%s\n", current->jobid, "Done", current->cmdline);
       fflush(stdout);
       free(current->cmdline);
       free(current);
@@ -562,7 +576,7 @@ addbgjob(pid_t pid, commandT* cmd)
     lastbgjob->next = newjob;
   }
   newjob->pid = pid;
-  newjob->done = 0;
+  newjob->state = RUNNING;
   newjob->jobid = maxjobid + 1;
   newjob->cmdline = (char *)malloc(sizeof(char) * (1 + strlen(cmd->cmdline)));
   strcpy(newjob->cmdline, cmd->cmdline);
@@ -577,7 +591,11 @@ removebgjob(pid_t pid)
   current = bgjobs;
   while (current != NULL) {
     if (current->pid == pid) {
-      current->done = 1;
+      if (current->state == FG) {
+	current->state = FGDONE;
+      } else {
+	current->state = DONE;
+      }
     }
     current = current->next;
   }
@@ -591,10 +609,31 @@ showjobs()
   while (job != NULL) {
     printf("[%d]   %-24s%s%s\n", 
 	   job->jobid, 
-	   (job->done ? "Done" : "Running"), 
+	   (job->state == DONE ? "Done" : "Running"), 
 	   job->cmdline,
-	   (job->done ? "" : " &"));
+	   (job->state == DONE ? "" : " &"));
     job = job->next;
   }
   fflush(stdout);
+}
+
+static void
+foregroundjob(int jobid)
+{
+  bgjobL *job = bgjobs;
+  while (job != NULL) {
+    if (job->jobid == jobid) {
+      fgpid = job->pid;
+      job->state = FG;
+      waitforfg(job->pid);
+    }
+    job = job->next;
+  }
+}
+
+/* wait for the fg job to finish */
+static void
+waitforfg(pid_t id)
+{
+  while(fgpid == id) sleep(1);
 }
