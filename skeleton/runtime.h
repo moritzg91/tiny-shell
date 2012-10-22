@@ -37,7 +37,7 @@
 #endif
 
 /************System include***********************************************/
-
+#include "interpreter.h"
 /************Private include**********************************************/
 
 /************Defines and Typedefs*****************************************/
@@ -55,15 +55,6 @@
 #define EXTERN extern
 #define VAREXTERN(x, y) extern x;
 #endif
-
-typedef struct command_t
-{
-  char* name;
-  char* path;
-  char* cmdline;
-  int argc;
-  char* argv[];
-} commandT;
 
 /************Global Variables*********************************************/
 
@@ -196,6 +187,11 @@ addbgjob(pid_t, commandT*);
 /* remove a bg job from the list */
 EXTERN void
 removebgjob(pid_t);
+
+// handles the logic of the alias builtin
+void
+RunAliasCmd(commandT*, bool);
+
 /************External Declaration*****************************************/
 
 /**************Definition***************************************************/

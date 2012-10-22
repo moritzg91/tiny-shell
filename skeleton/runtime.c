@@ -79,8 +79,17 @@ typedef struct bgjob_l
   char *cmdline;
 } bgjobL;
 
+typedef struct alias_l
+{
+  char* name;
+  char* value;
+  struct alias_l* next;
+} aliasL;
+
 /* the pids of the background processes */
 bgjobL *bgjobs = NULL;
+/* list of user-defined command aliases */
+aliasL *aliasLst = NULL;
 
 /************Function Prototypes******************************************/
 /* run command */
@@ -148,6 +157,9 @@ void
 RunCmdFork(commandT* cmd, bool fork)
 {
   int i;
+  aliasL* aliasIter;
+  char* newCmdline;
+  bool foundAlias = FALSE;
   
   if (cmd->argc <= 0)
     return;
@@ -166,7 +178,31 @@ RunCmdFork(commandT* cmd, bool fork)
       }
     }
   }
-
+  // check if any argv's are an alias
+    for (i = 0; i < cmd->argc; ++i) {
+      aliasIter = aliasLst;
+      while (aliasIter) {
+        if (strcmp(cmd->argv[i],aliasIter->name) == 0) {
+          strcpy(cmd->argv[i],aliasIter->value);
+          foundAlias = TRUE;
+        }
+        aliasIter = aliasIter->next;
+      }
+    }
+  if (foundAlias) {
+    // build new commandT
+    newCmdline = (char*)malloc(sizeof(char) * 128);
+    memset(newCmdline,'\0',128);
+    for (i = 0; i < cmd->argc; ++i) {
+      strcat(newCmdline,cmd->argv[i]);
+      strcat(newCmdline," ");
+    }
+    
+    cmd = getCommand(newCmdline);
+    cmd->cmdline = (char *)malloc(sizeof(char) * (strlen(newCmdline) + 1));
+    strcpy(cmd->cmdline, newCmdline); 
+  }
+  
   if (IsBuiltIn(cmd->argv[0]))
     {
       RunBuiltInCmd(cmd);
@@ -226,15 +262,16 @@ RunCmdPipe(commandT* cmd1, commandT* cmd2)
 void
 RedirIO(commandT* cmd)
 {
-  int i;
+  int i, j, fid;
+  char* file;
+  char redirOp;
   // check argv for '<' or '>' operators
   for (i=0; i < (cmd->argc - 1); i++) {
     if ((strcmp(cmd->argv[i],">") == 0) || (strcmp(cmd->argv[i],"<") == 0)) {
-      char redirOp = cmd->argv[i][0];
-      char* file = malloc(sizeof(char*)*strlen(cmd->argv[i+1])+1);
+      redirOp = cmd->argv[i][0];
+      file = malloc(sizeof(char*)*strlen(cmd->argv[i+1])+1);
       strcpy(file,cmd->argv[i+1]);
       // remove the redirection from argv[]
-      int j;
       for (j = i; (j+2) < (cmd->argc); j++) {
         cmd->argv[j] = cmd->argv[j+2];
       }
@@ -243,7 +280,6 @@ RedirIO(commandT* cmd)
       cmd->argc -= 2;
       i -= 1;
       // redirect stream to file*
-      int fid;
       if (redirOp == '<') {
         fid = open(file, O_RDONLY);
         close(0);
@@ -427,6 +463,9 @@ IsBuiltIn(char* cmd)
     return TRUE;
   }
   free(cmdtoks);
+  if ((strcmp(cmd,"alias") == 0) || (strcmp(cmd,"unalias") == 0)) {
+    return TRUE;
+  }
   return FALSE;
 } /* IsBuiltIn */
 
@@ -447,7 +486,6 @@ RunBuiltInCmd(commandT* cmd)
   char *cmdtoks = (char *)malloc(sizeof(char) * (1 + strlen(cmd->argv[0])));
   strcpy(cmdtoks, cmd->argv[0]);
   char *envvar;
-
   // cd command - defaults to homedir
   if (strcmp(cmd->argv[0], "cd") == 0) {
       if (cmd->argc > 1)
@@ -455,18 +493,90 @@ RunBuiltInCmd(commandT* cmd)
       else
 	chdir(getenv("HOME"));
   }
-
+  // jobs command
   if (strcmp(cmd->argv[0], "jobs") == 0)
     showjobs();
 
   // do environment update if it has the right form
   envvar = strtok(cmdtoks, "=");
-  if (envvar != NULL) {
+  if (envvar != NULL && strcmp(envvar,cmd->argv[0])) {
     setenv(envvar, strtok(NULL, "="), TRUE);
+  }
+  if (strcmp(cmd->argv[0], "alias") == 0) {
+    RunAliasCmd(cmd,FALSE);
+  }
+  if (strcmp(cmd->argv[0],"unalias") == 0) {
+    RunAliasCmd(cmd,TRUE);
   }
   free(cmdtoks);
 } /* RunBuiltInCmd */
 
+void
+RunAliasCmd(commandT* cmd, bool unalias)
+{
+  aliasL *curAlias, *prevAlias, *newAlias;
+  char* cmdtoks;
+  
+  if (unalias) {
+    prevAlias = NULL;
+    for (curAlias = aliasLst; curAlias != NULL; curAlias = curAlias->next) {
+      if (strcmp(cmd->argv[1],curAlias->name) == 0) {
+        if (prevAlias) {
+          prevAlias->next = curAlias->next;
+        } else {
+          aliasLst = NULL;
+        }
+        free(curAlias);
+        return;
+      }
+      prevAlias = curAlias;
+    }
+    return;
+  }
+  else if (cmd->argc > 1) {
+    cmdtoks = (char *)malloc(sizeof(char) * (1 + strlen(cmd->argv[1])));
+    strcpy(cmdtoks, cmd->argv[1]);
+    
+    newAlias = (aliasL *)malloc(sizeof(aliasL));
+    newAlias->name = (char*)malloc(sizeof(char) * 80);
+    newAlias->value = (char*)malloc(sizeof(char) * 80);
+    strcpy(newAlias->name,strtok(cmdtoks,"="));
+    strcpy(newAlias->value,strtok(NULL,"="));
+    newAlias->next = NULL;
+    free(cmdtoks);
+    
+    // check if the alias exists already
+    curAlias = aliasLst;
+    prevAlias = NULL;
+    while (curAlias) {
+      if (strcmp(newAlias->name,curAlias->name) == 0) {
+        if (prevAlias) {
+          prevAlias->next = newAlias;
+        } else {
+          aliasLst = newAlias;
+        }
+          newAlias->next = curAlias->next;
+        free(curAlias->name);
+        free(curAlias->value);
+          free(curAlias);
+        return;
+      }
+      prevAlias = curAlias;
+      curAlias = curAlias->next;
+    }
+    // if alias doesn't exist yet, append it to the end of the list
+    if (prevAlias) {
+      prevAlias->next = newAlias;
+    } else {
+      aliasLst = newAlias;
+    }
+  }
+  else {  // print out list of aliases
+    for (curAlias = aliasLst; curAlias != NULL; curAlias = curAlias->next) {
+      printf("alias %s='%s'\n",curAlias->name,curAlias->value);
+    }
+  }
+} /* RunAliasCmd */
 
 /*
  * CheckJobs
