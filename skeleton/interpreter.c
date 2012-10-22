@@ -70,12 +70,6 @@ int MAXARGS = 100;
 
 /**************Function Prototypes******************************************/
 
-commandT*
-getCommand(char* cmdLine);
-
-void
-freeCommand(commandT* cmd);
-
 /**************Implementation***********************************************/
 
 
@@ -127,7 +121,7 @@ getCommand(char* cmdLine)
   cmd->argv[0] = 0;
   cmd->name = 0;
   cmd->argc = 0;
-
+  
   int i, inArg = 0;
   char quote = 0;
   char escape = 0;
@@ -142,7 +136,7 @@ getCommand(char* cmdLine)
   for (i = 0; cmdLine[i] != 0; i++)
     {
       //printf("\tindex %d, char %c\n", i, cmdLine[i]);
-
+      
       // Check for whitespace
       if (cmdLine[i] == ' ')
         {
@@ -222,7 +216,12 @@ getCommand(char* cmdLine)
           escape = '\\';
           continue;
         }
-
+      // replace ~/ with $HOME/
+      if (cmdLine[i-1] == '~' && cmdLine[i] == '/') {
+        tmp[tmpLen-1] = '\0';
+        strcat(tmp,getenv("HOME"));
+        tmpLen = tmpLen+strlen(getenv("HOME"))-1;
+      }
       tmp[tmpLen++] = cmdLine[i];
       tmp[tmpLen] = 0;
     }
@@ -241,7 +240,6 @@ getCommand(char* cmdLine)
     }
 
   free(tmp);
-
   cmd->name = cmd->argv[0];
   cmd->path = NULL;
 

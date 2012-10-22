@@ -48,6 +48,15 @@
 #define EXTERN extern
 #endif
 
+typedef struct command_t
+{
+  char* name;
+  char* path;
+  char* cmdline;
+  int argc;
+  char* argv[];
+} commandT;
+
 /************Global Variables*********************************************/
 
 /************Function Prototypes******************************************/
@@ -63,6 +72,11 @@
 EXTERN void
 Interpret(char*);
 
+commandT*
+getCommand(char*);
+
+void
+freeCommand(commandT*);
 /************External Declaration*****************************************/
 
 /**************Definition***************************************************/
