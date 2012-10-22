@@ -119,6 +119,9 @@ foregroundjob(int);
 /* wait for the fg job to finish */
 static void
 waitforfg();
+/* do bg built in command */
+static void
+dobg(int);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -408,6 +411,8 @@ IsBuiltIn(char* cmd)
     return TRUE;
   if (strcmp(cmd, "fg") == 0)
     return TRUE;
+  if (strcmp(cmd, "bg") == 0)
+    return TRUE;
   cmdtoks = (char *)malloc(sizeof(char) * (1 + strlen(cmd)));
   strcpy(cmdtoks, cmd);
   if (strtok(cmdtoks, "=") != NULL &&
@@ -450,6 +455,8 @@ RunBuiltInCmd(commandT* cmd)
     showjobs();
   if (strcmp(cmd->argv[0], "fg") == 0)
     foregroundjob(atoi(cmd->argv[1]));
+  if (strcmp(cmd->argv[0], "bg") == 0)
+    dobg(atoi(cmd->argv[1]));
 
   // do environment update if it has the right form
   envvar = strtok(cmdtoks, "=");
@@ -636,6 +643,19 @@ foregroundjob(int jobid)
       job->state = FG;
       kill(-fgpid, SIGCONT);
       waitforfg(job->pid);
+    }
+    job = job->next;
+  }
+}
+
+static void
+dobg(int jobid)
+{
+  bgjobL *job = bgjobs;
+  while (job != NULL) {
+    if (job->state == STOPPED && job->jobid == jobid) {
+      kill(job->pid, SIGCONT);
+      job->state = RUNNING;
     }
     job = job->next;
   }
