@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 /************Private include**********************************************/
 #include "tsh.h"
@@ -125,6 +126,8 @@ sig(int signo)
 {
   if (signo == SIGINT) 
     IntFgProc();
+  if (signo == SIGTSTP)
+    StopFgProc();
   if (signo == SIGCHLD)
     reap_children();
 } /* sig */
@@ -149,7 +152,11 @@ reap_children()
       // if fg process has stopped, update fgpid
       if (pid == fgpid)
 	fgpid = -1;
-      removebgjob(pid);
+      if (WIFSTOPPED(status)) {
+	removebgjob(pid, STOPPED);
+      }
+      else
+	removebgjob(pid, DONE);
     } while (pid > 0);
 } /*reap_children */
 

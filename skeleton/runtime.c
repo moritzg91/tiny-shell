@@ -70,9 +70,6 @@
 
 #define NBUILTINCOMMANDS (sizeof BuiltInCommands / sizeof(char*))
 
-typedef enum { RUNNING, DONE, FG, FGDONE } state_t;
-
-
 typedef struct bgjob_l
 {
   pid_t pid;
@@ -110,6 +107,9 @@ getpath(char*);
 /* frees the above array */
 static void 
 freepath(char**);
+/* add a bg job to the list */
+static bgjobL*
+addbgjob(pid_t, commandT*, bool);
 /* display the jobs list */
 static void
 showjobs();
@@ -270,7 +270,6 @@ IntFgProc()
   if (fgpid != -1) 
     {
       kill(-fgpid, SIGINT);
-      fgpid = -1;
     }
 }
 
@@ -375,10 +374,11 @@ Exec(commandT* cmd, bool forceFork, bool bg)
   } else {
     // parent process
     if (bg) {
-      addbgjob(pid, cmd);
+      addbgjob(pid, cmd, TRUE);
       sigprocmask(SIG_UNBLOCK, &mask, NULL);
     } else {
       fgpid = pid;
+      (addbgjob(pid, cmd, FALSE))->state = FG;
       sigprocmask(SIG_UNBLOCK, &mask, NULL);
       waitforfg(pid);
     }
@@ -557,8 +557,8 @@ freepath(char** path)
 }
 
 /* add a bg job to the list */
-void
-addbgjob(pid_t pid, commandT* cmd)
+bgjobL *
+addbgjob(pid_t pid, commandT* cmd, bool isbg)
 {
   bgjobL *lastbgjob = bgjobs;
   bgjobL *newjob = (bgjobL *)malloc(sizeof(bgjobL));
@@ -581,20 +581,22 @@ addbgjob(pid_t pid, commandT* cmd)
   newjob->cmdline = (char *)malloc(sizeof(char) * (1 + strlen(cmd->cmdline)));
   strcpy(newjob->cmdline, cmd->cmdline);
   int cmdlinelen = strlen(newjob->cmdline);
-  newjob->cmdline[cmdlinelen - 2] = '\0';
+  if (isbg)
+    newjob->cmdline[cmdlinelen - 2] = '\0';
+  return newjob;
 }
 /* remove a bg job from the list */
 void
-removebgjob(pid_t pid)
+removebgjob(pid_t pid, state_t newstate)
 {
   bgjobL *current;
   current = bgjobs;
   while (current != NULL) {
     if (current->pid == pid) {
-      if (current->state == FG) {
+      if (current->state == FG && newstate == DONE) {
 	current->state = FGDONE;
       } else {
-	current->state = DONE;
+	current->state = newstate;
       }
     }
     current = current->next;
@@ -607,11 +609,18 @@ showjobs()
 {
   bgjobL *job = bgjobs;
   while (job != NULL) {
-    printf("[%d]   %-24s%s%s\n", 
-	   job->jobid, 
-	   (job->state == DONE ? "Done" : "Running"), 
-	   job->cmdline,
-	   (job->state == DONE ? "" : " &"));
+    if (job->state != FGDONE) {
+      state_t state = job->state;
+      const char* msg =
+	(state == DONE ? "Done" :
+	 (state == RUNNING ? "Running" :
+	  (state == STOPPED ? "Stopped" : "slfaksjd!")));
+      printf("[%d]   %-24s%s%s\n", 
+	     job->jobid, 
+	     msg, 
+	     job->cmdline,
+	     (job->state == RUNNING ? " &" : ""));
+    }
     job = job->next;
   }
   fflush(stdout);
@@ -625,6 +634,7 @@ foregroundjob(int jobid)
     if (job->jobid == jobid) {
       fgpid = job->pid;
       job->state = FG;
+      kill(-fgpid, SIGCONT);
       waitforfg(job->pid);
     }
     job = job->next;
@@ -636,4 +646,28 @@ static void
 waitforfg(pid_t id)
 {
   while(fgpid == id) sleep(1);
+}
+
+/***********************************************************************
+ *  Title: Stop the foreground process
+ * ---------------------------------------------------------------------
+ *    Purpose: Stops the current foreground process if there is any.
+ *    Input: void
+ *    Output: void
+ ***********************************************************************/
+void
+StopFgProc()
+{
+  if (fgpid == -1)
+    return;
+  bgjobL *job = bgjobs;
+  while (job != NULL) {
+    if (job->pid == fgpid)
+      break;
+    job = job->next;
+  }
+  job->state = STOPPED;
+  kill(-fgpid, SIGTSTP);
+  fgpid = -1; 
+  printf("[%d]   %-24s%s\n", job->jobid, "Stopped", job->cmdline);
 }

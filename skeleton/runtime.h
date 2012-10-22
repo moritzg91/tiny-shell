@@ -65,6 +65,8 @@ typedef struct command_t
   char* argv[];
 } commandT;
 
+typedef enum { RUNNING, DONE, FG, FGDONE, STOPPED } state_t;
+
 /************Global Variables*********************************************/
 
 pid_t fgpid;
@@ -199,12 +201,9 @@ CheckJobs();
 EXTERN void
 IntFgProc();
 
-/* add a bg job to the list */
-EXTERN void
-addbgjob(pid_t, commandT*);
 /* remove a bg job from the list */
 EXTERN void
-removebgjob(pid_t);
+removebgjob(pid_t, state_t);
 /************External Declaration*****************************************/
 
 /**************Definition***************************************************/
