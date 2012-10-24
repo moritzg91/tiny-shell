@@ -433,10 +433,12 @@ Exec(commandT* cmd, bool forceFork, bool bg)
     execv(cmd->path, cmd->argv);
   } else {
     // parent process
+    // add the job to the bg job list
     if (bg) {
       addbgjob(pid, cmd, TRUE);
       sigprocmask(SIG_UNBLOCK, &mask, NULL);
     } else {
+      // record that this is a fg job
       fgpid = pid;
       (addbgjob(pid, cmd, FALSE))->state = FG;
       sigprocmask(SIG_UNBLOCK, &mask, NULL);
@@ -605,7 +607,7 @@ RunAliasCmd(commandT* cmd, bool unalias)
  *
  * returns: none
  *
- * Checks the status of running jobs.
+ * Checks the status of running jobs, and delete jobs from the list if necessary.
  */
 void
 CheckJobs()
@@ -616,6 +618,7 @@ CheckJobs()
   current = bgjobs;
   prev = NULL;
   while (current != NULL) {
+    // delete bg and fg jbos that have finished
     if (current->state == DONE || current->state == FGDONE) {
       if (prev == NULL) {
 	bgjobs = current->next;
@@ -623,6 +626,7 @@ CheckJobs()
 	prev->next = current->next;
       }
       temp = current->next;
+      // if it was a bg job, report it finished
       if (current->state == DONE) 
 	printf("[%d]   %-24s%s\n", current->jobid, "Done", current->cmdline);
       fflush(stdout);
@@ -694,7 +698,15 @@ freepath(char** path)
   free(path);
 }
 
-/* add a bg job to the list */
+/*
+ * addbgjob
+ *
+ * arguments: process id, command struct, boolean
+ *
+ * returns: pointer to a bgjobL
+ *
+ * adds the job to the bgjobs list, records necessary info
+ */
 bgjobL *
 addbgjob(pid_t pid, commandT* cmd, bool isbg)
 {
@@ -702,6 +714,8 @@ addbgjob(pid_t pid, commandT* cmd, bool isbg)
   bgjobL *newjob = (bgjobL *)malloc(sizeof(bgjobL));
   newjob->next = NULL;
   int maxjobid = 0;
+  // add the job to the beginning of the list
+  // (bg jobs is in descending order of age)
   if (lastbgjob == NULL) {
     bgjobs = newjob;
   } else {
@@ -713,24 +727,36 @@ addbgjob(pid_t pid, commandT* cmd, bool isbg)
     }
     lastbgjob->next = newjob;
   }
+  // record everying in newjob and return it
   newjob->pid = pid;
   newjob->state = RUNNING;
   newjob->jobid = maxjobid + 1;
   newjob->cmdline = (char *)malloc(sizeof(char) * (1 + strlen(cmd->cmdline)));
   strcpy(newjob->cmdline, cmd->cmdline);
   int cmdlinelen = strlen(newjob->cmdline);
+  // drop the " &" if it's a bg jobx
   if (isbg)
     newjob->cmdline[cmdlinelen - 2] = '\0';
   return newjob;
 }
-/* remove a bg job from the list */
+
+/*
+ * updatebgjob
+ *
+ * arguments: process id, job state
+ *
+ * returns: void
+ *
+ * update the state of a job in the bgjobs list
+ */
 void
-removebgjob(pid_t pid, state_t newstate)
+updatebgjob(pid_t pid, state_t newstate)
 {
   bgjobL *current;
   current = bgjobs;
   while (current != NULL) {
     if (current->pid == pid) {
+      // fg jobs are special
       if (current->state == FG && newstate == DONE) {
 	current->state = FGDONE;
       } else {
@@ -741,7 +767,15 @@ removebgjob(pid_t pid, state_t newstate)
   }
 }
 
-
+/*
+ * showjobs
+ *
+ * arguments: none
+ *
+ * returns: void
+ *
+ * print out running jobs and their state
+ */
 static void
 showjobs()
 {
@@ -764,12 +798,22 @@ showjobs()
   fflush(stdout);
 }
 
+/*
+ * foregroundjob
+ *
+ * arguments: the job id
+ *
+ * returns: void
+ *
+ * move a stopped bg job to the fg
+ */
 static void
 foregroundjob(int jobid)
 {
   bgjobL *job = bgjobs;
   while (job != NULL) {
     if (job->jobid == jobid) {
+      // update state, send continue signal, and wait
       fgpid = job->pid;
       job->state = FG;
       kill(-fgpid, SIGCONT);
@@ -779,6 +823,15 @@ foregroundjob(int jobid)
   }
 }
 
+/*
+ * dobg
+ *
+ * arguments: the job id
+ *
+ * returns: void
+ *
+ * start a stopped bg job
+ */
 static void
 dobg(int jobid)
 {
@@ -799,13 +852,15 @@ waitforfg(pid_t id)
   while(fgpid == id) sleep(1);
 }
 
-/***********************************************************************
- *  Title: Stop the foreground process
- * ---------------------------------------------------------------------
- *    Purpose: Stops the current foreground process if there is any.
- *    Input: void
- *    Output: void
- ***********************************************************************/
+/*
+ * StopFgProc
+ *
+ * arguments: none
+ *
+ * returns: void
+ *
+ * stend sigtstp to the fg process group, and record the new state
+ */
 void
 StopFgProc()
 {

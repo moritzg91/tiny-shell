@@ -153,10 +153,10 @@ reap_children()
       if (pid == fgpid)
 	fgpid = -1;
       if (WIFSTOPPED(status)) {
-	removebgjob(pid, STOPPED);
+	updatebgjob(pid, STOPPED);
       }
       else
-	removebgjob(pid, DONE);
+	updatebgjob(pid, DONE);
     } while (pid > 0);
 } /*reap_children */
 

@@ -183,9 +183,15 @@ CheckJobs();
 EXTERN void
 IntFgProc();
 
-/* remove a bg job from the list */
+/***********************************************************************
+ *  Title: Update the state of a background job
+ * ---------------------------------------------------------------------
+ *    Purpose: Record bg job state.
+ *    Input: the job pid, and the new state
+ *    Output: void
+ ***********************************************************************/
 EXTERN void
-removebgjob(pid_t, state_t);
+updatebgjob(pid_t, state_t);
 
 // handles the logic of the alias builtin
 void
