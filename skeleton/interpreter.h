@@ -54,6 +54,7 @@ typedef struct command_t
   char* path;
   char* cmdline;
   int argc;
+  struct command_t* pipeTo;
   char* argv[];
 } commandT;
 

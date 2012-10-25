@@ -100,7 +100,7 @@ RunCmdBg(commandT*);
  *    Output: void
  ***********************************************************************/
 EXTERN void
-RunCmdPipe(commandT*, commandT*);
+RunCmdPipe(commandT*, commandT*, bool, bool);
 
 /***********************************************************************
  *  Title: Redirects I/O if necessary

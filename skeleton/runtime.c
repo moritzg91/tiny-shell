@@ -190,38 +190,65 @@ RunCmdFork(commandT* cmd, bool fork)
       }
     }
   }
-  // check if any argv's are an alias
-    for (i = 0; i < cmd->argc; ++i) {
-      aliasIter = aliasLst;
-      while (aliasIter) {
-        if (strcmp(cmd->argv[i],aliasIter->name) == 0) {
-          strcpy(cmd->argv[i],aliasIter->value);
-          foundAlias = TRUE;
-        }
-        aliasIter = aliasIter->next;
-      }
+  for (i = 0; i < strlen(cmd->cmdline); i++) {
+    if (cmd->cmdline[i] == '|') {
+      // split cmd into two command structs
+      char* first = (char*)malloc(sizeof(char)*(i+1));
+      memset(first, '\0', (i+1)*sizeof(char));
+      strncpy(first,cmd->cmdline,i-1);
+      char* second = (char*)malloc(sizeof(char)*(strlen(cmd->cmdline)-i));
+      strncpy(first,cmd->cmdline,i);
+      strcpy(second,cmd->cmdline+i+1);
+      
+      commandT* pipeFrom = getCommand(first);
+      pipeFrom->pipeTo = getCommand(second);
+      
+      free(first);
+      free(second);
+      
+      RunExternalCmd(pipeFrom,fork);
+      free(pipeFrom);
+      free(pipeFrom->pipeTo);
+      return;
     }
-  if (foundAlias) {
-    // build new commandT
-    newCmdline = (char*)malloc(sizeof(char) * 128);
-    memset(newCmdline,'\0',128);
-    for (i = 0; i < cmd->argc; ++i) {
-      strcat(newCmdline,cmd->argv[i]);
-      strcat(newCmdline," ");
-    }
-    
-    cmd = getCommand(newCmdline);
-    cmd->cmdline = (char *)malloc(sizeof(char) * (strlen(newCmdline) + 1));
-    strcpy(cmd->cmdline, newCmdline); 
   }
-  
   if (IsBuiltIn(cmd->argv[0]))
     {
       RunBuiltInCmd(cmd);
     }
   else
     {
-      RunExternalCmd(cmd, fork);
+      // check if any argv's are an alias
+      for (i = 0; i < cmd->argc; ++i) {
+        aliasIter = aliasLst;
+        while (aliasIter) {
+          if (strcmp(cmd->argv[i],aliasIter->name) == 0) {
+            strcpy(cmd->argv[i],aliasIter->value);
+            foundAlias = TRUE;
+          }
+          aliasIter = aliasIter->next;
+        }
+      }
+      if (foundAlias) {
+        // build new commandT
+        newCmdline = (char*)malloc(sizeof(char) * 128);
+        memset(newCmdline,'\0',128);
+        for (i = 0; i < cmd->argc; ++i) {
+          strcat(newCmdline,cmd->argv[i]);
+          strcat(newCmdline," ");
+        }
+        
+        cmd = getCommand(newCmdline);
+        cmd->cmdline = (char *)malloc(sizeof(char) * (strlen(newCmdline) + 1));
+        strcpy(cmd->cmdline, newCmdline); 
+      }
+      if (IsBuiltIn(cmd->argv[0]))
+      {
+        RunBuiltInCmd(cmd);
+      }
+      else {
+        RunExternalCmd(cmd, fork);
+      }
     }
 } /* RunCmdFork */
 
@@ -256,8 +283,45 @@ RunCmdBg(commandT* cmd)
  * standard input on the second.
  */
 void
-RunCmdPipe(commandT* cmd1, commandT* cmd2)
+RunCmdPipe(commandT* cmd1, commandT* cmd2, bool forceFork, bool bg)
 {
+  int pipeID[2];
+  //sigset_t mask;
+  //sigemptyset(&mask);
+  //sigaddset(&mask, SIGCHLD);
+  
+  // block sigchld signals until recording the new process id,
+  // and then fork the foreground process
+  int pid;
+  int status;
+  
+  pipe(pipeID);
+  pid = fork();
+  if (pid == 0) {
+    close(pipeID[0]);
+    close(1);
+    dup(pipeID[1]);
+    close(pipeID[1]);
+    execv(cmd1->path,cmd1->argv);
+    exit(0);
+  } else {
+  waitpid(-1,&status,WNOHANG);
+  }
+  
+  pid = fork();
+  if (pid == 0) {
+    close(pipeID[1]);
+    close(0);
+    dup(pipeID[0]);
+    close(pipeID[0]);
+    execv(cmd2->path,cmd2->argv);
+    exit(0);
+  } else {
+    waitpid(-1,&status,WNOHANG);
+  }
+  close(pipeID[0]);
+  close(pipeID[1]);
+  sleep(1);
 } /* RunCmdPipe */
 
 
@@ -354,11 +418,20 @@ RunExternalCmd(commandT* cmd, bool fork)
   }
   if (ResolveExternalCmd(cmd, path))
     {
-      Exec(cmd, fork, bg);
+      if (cmd->pipeTo != NULL) {
+        freepath(path);
+        path = getpath(cmd->pipeTo->argv[0]);
+        if (ResolveExternalCmd(cmd->pipeTo, path)) {
+          RunCmdPipe(cmd,cmd->pipeTo,fork,bg);
+        }
+      }
+      else {
+        Exec(cmd, fork, bg);
+      }
     }
   else
     {
-      printf("./tsh-ref: line 1: %s: No such file or directory\n", cmd->argv[0]);
+      printf("/bin/bash: line 6: %s: command not found\n", cmd->argv[0]);
     }
   freepath(path);
 }  /* RunExternalCmd */
@@ -398,7 +471,6 @@ ResolveExternalCmd(commandT* cmd, char** path)
   return(stat(cmd->argv[0], &buf) == 0);
 } /* ResolveExternalCmd */
 
-
 /*
  * Exec
  *
@@ -411,6 +483,7 @@ ResolveExternalCmd(commandT* cmd, char** path)
  *
  * Executes an external command.
  */
+
 static void
 Exec(commandT* cmd, bool forceFork, bool bg)
 {
@@ -546,13 +619,14 @@ RunAliasCmd(commandT* cmd, bool unalias)
         if (prevAlias) {
           prevAlias->next = curAlias->next;
         } else {
-          aliasLst = NULL;
+          aliasLst = curAlias->next;
         }
         free(curAlias);
         return;
       }
       prevAlias = curAlias;
     }
+    printf("/bin/bash: line %d: unalias: %s: not found\n",3,cmd->argv[1]);
     return;
   }
   else if (cmd->argc > 1) {
@@ -567,7 +641,7 @@ RunAliasCmd(commandT* cmd, bool unalias)
     newAlias->next = NULL;
     free(cmdtoks);
     
-    // check if the alias exists already
+    // check if the alias exists already; aliasLst is sorted alphabetically
     curAlias = aliasLst;
     prevAlias = NULL;
     while (curAlias) {
@@ -580,13 +654,23 @@ RunAliasCmd(commandT* cmd, bool unalias)
           newAlias->next = curAlias->next;
         free(curAlias->name);
         free(curAlias->value);
-          free(curAlias);
+        free(curAlias);
         return;
       }
-      prevAlias = curAlias;
-      curAlias = curAlias->next;
+      // alias doesn't exist yet, so insert it at the correct position
+      else if (strcmp(newAlias->name,curAlias->name) < 0) {
+        if (prevAlias) {
+          prevAlias->next = newAlias;
+        } else {
+          aliasLst = newAlias;
+        }
+        newAlias->next = curAlias;
+        return;
+      }
+        prevAlias = curAlias;
+        curAlias = curAlias->next;
     }
-    // if alias doesn't exist yet, append it to the end of the list
+    // if alias doesn't exist yet, insert it in the list in alphabetical order
     if (prevAlias) {
       prevAlias->next = newAlias;
     } else {
@@ -849,7 +933,7 @@ dobg(int jobid)
 static void
 waitforfg(pid_t id)
 {
-  while(fgpid == id) sleep(1);
+  while(fgpid ==id) sleep(1);
 }
 
 /*
