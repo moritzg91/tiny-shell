@@ -107,6 +107,9 @@ Exec(commandT*, bool, bool);
 /* runs a builtin command */
 static void
 RunBuiltInCmd(commandT*);
+
+void
+RunCmdPipe(commandT*, bool, bool);
 /* checks whether a command is a builtin command */
 static bool
 IsBuiltIn(char*);
@@ -131,6 +134,9 @@ waitforfg();
 /* do bg built in command */
 static void
 dobg(int);
+
+void
+ExecPipe(commandT*, int[2], int[2], pipeop_t);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -152,7 +158,41 @@ RunCmd(commandT* cmd)
   RunCmdFork(cmd, TRUE);
 } /* RunCmd */
 
-
+commandT*
+splitPipeCmd(char* cmdline) {
+  int i;
+  static bool pipeFound = FALSE;
+  for (i = 0; i < strlen(cmdline); i++) {
+    if (cmdline[i] == '|') {
+      pipeFound = TRUE;
+      // split cmd into two command structs
+      char* first = (char*)malloc(sizeof(char)*(i+1));
+      memset(first, '\0', (i+1)*sizeof(char));
+      strncpy(first,cmdline,i-1);
+      char* second = (char*)malloc(sizeof(char)*(strlen(cmdline)-i));
+      strncpy(first,cmdline,i);
+      strcpy(second,cmdline+i+1);
+      
+      commandT* pipeFrom = getCommand(first);
+      pipeFrom->cmdline = (char *)malloc(sizeof(char) * (strlen(first) + 1));
+      strcpy(pipeFrom->cmdline, first); 
+      pipeFrom->pipeTo = splitPipeCmd(second);
+      if (pipeFrom->pipeTo) {
+        pipeFrom->pipeTo->cmdline = (char *)malloc(sizeof(char) * (strlen(second) + 1));
+        strcpy(pipeFrom->pipeTo->cmdline, second);
+      }
+      free(first);
+      free(second);
+      return pipeFrom;
+    }
+  }
+  if (pipeFound) {
+    pipeFound = FALSE;
+    return getCommand(cmdline);
+  } else {
+    return NULL;
+  }
+}
 /*
  * RunCmdFork
  *
@@ -172,6 +212,8 @@ RunCmdFork(commandT* cmd, bool fork)
   aliasL* aliasIter;
   char* newCmdline;
   bool foundAlias = FALSE;
+  commandT* pipeFrom = NULL;
+  commandT* curCmd = NULL;
   
   if (cmd->argc <= 0)
     return;
@@ -190,28 +232,8 @@ RunCmdFork(commandT* cmd, bool fork)
       }
     }
   }
-  for (i = 0; i < strlen(cmd->cmdline); i++) {
-    if (cmd->cmdline[i] == '|') {
-      // split cmd into two command structs
-      char* first = (char*)malloc(sizeof(char)*(i+1));
-      memset(first, '\0', (i+1)*sizeof(char));
-      strncpy(first,cmd->cmdline,i-1);
-      char* second = (char*)malloc(sizeof(char)*(strlen(cmd->cmdline)-i));
-      strncpy(first,cmd->cmdline,i);
-      strcpy(second,cmd->cmdline+i+1);
-      
-      commandT* pipeFrom = getCommand(first);
-      pipeFrom->pipeTo = getCommand(second);
-      
-      free(first);
-      free(second);
-      
-      RunExternalCmd(pipeFrom,fork);
-      free(pipeFrom);
-      free(pipeFrom->pipeTo);
-      return;
-    }
-  }
+  pipeFrom = splitPipeCmd(cmd->cmdline);
+  
   if (IsBuiltIn(cmd->argv[0]))
     {
       RunBuiltInCmd(cmd);
@@ -247,7 +269,17 @@ RunCmdFork(commandT* cmd, bool fork)
         RunBuiltInCmd(cmd);
       }
       else {
-        RunExternalCmd(cmd, fork);
+        if (pipeFrom) {
+          RunExternalCmd(pipeFrom, fork);
+          curCmd = pipeFrom;
+          while (pipeFrom) {
+            curCmd = pipeFrom;
+            pipeFrom = pipeFrom->pipeTo;
+            freeCommand(curCmd);
+          }
+        } else {
+          RunExternalCmd(cmd, fork);
+        }
       }
     }
 } /* RunCmdFork */
@@ -271,7 +303,7 @@ RunCmdBg(commandT* cmd)
 
 
 /*
- * RunCmdPipe
+ * ExecPipe
  *
  * arguments:
  *   commandT *cmd1: the commandT struct for the left hand side of the pipe
@@ -283,46 +315,96 @@ RunCmdBg(commandT* cmd)
  * standard input on the second.
  */
 void
-RunCmdPipe(commandT* cmd1, commandT* cmd2, bool forceFork, bool bg)
+RunCmdPipe(commandT* cmd1, bool forceFork, bool bg)
 {
   int pipeID[2];
-  //sigset_t mask;
-  //sigemptyset(&mask);
-  //sigaddset(&mask, SIGCHLD);
+  int pipeID2[2];
+  pipeop_t op = WRITE;
   
-  // block sigchld signals until recording the new process id,
-  // and then fork the foreground process
-  int pid;
-  int status;
+  commandT* curCmd;
   
-  pipe(pipeID);
-  pid = fork();
-  if (pid == 0) {
-    close(pipeID[0]);
-    close(1);
-    dup(pipeID[1]);
-    close(pipeID[1]);
-    execv(cmd1->path,cmd1->argv);
-    exit(0);
-  } else {
-  waitpid(-1,&status,WNOHANG);
+  //pipe(pipeID);
+  
+  for (curCmd = cmd1; curCmd != NULL; ) {
+    if (op == WRITE) {
+      pipe(pipeID);
+      ExecPipe(curCmd, pipeID, pipeID2, WRITE);
+      curCmd = curCmd->pipeTo;
+      if (curCmd->pipeTo) {
+        op = READWRITE;
+      } else {
+        op = READ;
+      }
+    } else if (op == READWRITE) {
+      pipe(pipeID2);
+      ExecPipe(curCmd, pipeID, pipeID2, READWRITE);
+      close(pipeID[0]);
+      close(pipeID[1]);
+      //fflush(stdout);
+      pipeID[0] = pipeID2[0];
+      pipeID[1] = pipeID2[1];
+      curCmd = curCmd->pipeTo;
+      if (curCmd->pipeTo) {
+        op = READWRITE;
+      } else {
+        op = READ;
+      }
+    } else if (op == READ) {
+      ExecPipe(curCmd, pipeID, pipeID2, READ);
+      sleep(1);
+      close(pipeID[0]);
+      close(pipeID[1]);
+      fflush(stdout);
+      break;
+    }
   }
-  
-  pid = fork();
-  if (pid == 0) {
-    close(pipeID[1]);
-    close(0);
-    dup(pipeID[0]);
-    close(pipeID[0]);
-    execv(cmd2->path,cmd2->argv);
-    exit(0);
-  } else {
-    waitpid(-1,&status,WNOHANG);
+  if (pipeID2[0] || pipeID2[1]) {
+    close(pipeID2[0]);
+    close(pipeID2[1]);
   }
-  close(pipeID[0]);
-  close(pipeID[1]);
-  sleep(1);
+  fflush(stdout);
 } /* RunCmdPipe */
+
+void
+ExecPipe(commandT *cmd, int pipeID[2], int pipeID2[2], pipeop_t op)
+{
+  int pid, status;
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGCHLD);
+  sigprocmask(SIG_BLOCK, &mask, NULL);
+  
+  pid = fork();
+  if (pid == 0) {
+    setpgid(0,0);
+    if (op == WRITE) {
+      close(pipeID[0]);
+      close(1);
+      dup(pipeID[1]);
+      close(pipeID[1]);
+    }
+    else if (op == READ) { // read end of pipe
+      close(pipeID[1]);
+      close(0);
+      dup(pipeID[0]);
+      close(pipeID[0]);
+    } else if (op == READWRITE) {
+      close(pipeID2[0]); // stdin of right pipe
+      close(pipeID[1]); // stdout of left pipe
+      close(0); // stdin
+      dup(pipeID[0]);
+      close(pipeID[0]);
+      close(1);
+      dup(pipeID2[1]);
+      close(pipeID2[1]);
+    }
+    execv(cmd->path,cmd->argv);
+    
+  } else {
+    sigprocmask(SIG_UNBLOCK, &mask, NULL);
+    waitpid(pid, &status, WNOHANG);
+  }
+} /* ExecPipe */
 
 
 /*
@@ -410,6 +492,7 @@ RunExternalCmd(commandT* cmd, bool fork)
 {
   char** path = getpath(cmd->argv[0]);
   bool bg = 0;
+  bool allCmdsResolved = TRUE;
   if (strcmp(cmd->argv[cmd->argc - 1],"&") == 0) {
     free(cmd->argv[cmd->argc - 1]);
     cmd->argv[cmd->argc - 1] = NULL;
@@ -418,11 +501,19 @@ RunExternalCmd(commandT* cmd, bool fork)
   }
   if (ResolveExternalCmd(cmd, path))
     {
-      if (cmd->pipeTo != NULL) {
-        freepath(path);
-        path = getpath(cmd->pipeTo->argv[0]);
-        if (ResolveExternalCmd(cmd->pipeTo, path)) {
-          RunCmdPipe(cmd,cmd->pipeTo,fork,bg);
+      if (cmd->pipeTo) {
+        commandT* cmdCpy = cmd->pipeTo;
+        while (cmdCpy != NULL) {
+          freepath(path);
+          path = getpath(cmdCpy->argv[0]);
+          if (ResolveExternalCmd(cmdCpy, path) == FALSE) {
+            allCmdsResolved = FALSE;
+            break;
+          }
+          cmdCpy = cmdCpy->pipeTo;
+        }
+        if (allCmdsResolved) {
+          RunCmdPipe(cmd, fork, bg);
         }
       }
       else {
@@ -502,6 +593,7 @@ Exec(commandT* cmd, bool forceFork, bool bg)
     setpgid(0,0);
     // redirect I/O if necessary
     RedirIO(cmd);
+    
     // exec the command
     execv(cmd->path, cmd->argv);
   } else {

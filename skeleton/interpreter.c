@@ -121,6 +121,7 @@ getCommand(char* cmdLine)
   cmd->argv[0] = 0;
   cmd->name = 0;
   cmd->argc = 0;
+  cmd->pipeTo = NULL;
   
   int i, inArg = 0;
   char quote = 0;

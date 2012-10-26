@@ -57,7 +57,7 @@
 #endif
 
 typedef enum { RUNNING, DONE, FG, FGDONE, STOPPED } state_t;
-
+typedef enum { READ, WRITE, READWRITE } pipeop_t;
 /************Global Variables*********************************************/
 
 pid_t fgpid;
@@ -91,16 +91,6 @@ RunCmd(commandT*);
  ***********************************************************************/
 EXTERN void
 RunCmdBg(commandT*);
-
-/***********************************************************************
- *  Title: Runs two command with a pipe
- * ---------------------------------------------------------------------
- *    Purpose: Runs two command connected with a pipe.
- *    Input: two command structure
- *    Output: void
- ***********************************************************************/
-EXTERN void
-RunCmdPipe(commandT*, commandT*, bool, bool);
 
 /***********************************************************************
  *  Title: Redirects I/O if necessary
