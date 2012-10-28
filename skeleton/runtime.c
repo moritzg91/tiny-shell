@@ -107,7 +107,7 @@ Exec(commandT*, bool, bool);
 /* runs a builtin command */
 static void
 RunBuiltInCmd(commandT*);
-
+/* runs a sequence of cmds piped together */
 void
 RunCmdPipe(commandT*, bool, bool);
 /* checks whether a command is a builtin command */
@@ -134,7 +134,7 @@ waitforfg();
 /* do bg built in command */
 static void
 dobg(int);
-
+/* forks and runs a command connected to one end of a pipe */
 void
 ExecPipe(commandT*, int[2], int[2], pipeop_t);
 /************External Declaration*****************************************/
@@ -158,6 +158,17 @@ RunCmd(commandT* cmd)
   RunCmdFork(cmd, TRUE);
 } /* RunCmd */
 
+
+/*
+ * splitPipeCmd
+ *
+ * arguments:
+ *   char* cmdline: the command line to parse
+ *
+ * returns: the head of a linked list of cmd structs
+ *
+ * Parses a command line containing pipe symbols into a linked list of cmd structs
+ */
 commandT*
 splitPipeCmd(char* cmdline) {
   int i;
@@ -272,6 +283,7 @@ RunCmdFork(commandT* cmd, bool fork)
         if (pipeFrom) {
           RunExternalCmd(pipeFrom, fork);
           curCmd = pipeFrom;
+          // free all the commands in the linked list after RunExternalCmd is done using them
           while (pipeFrom) {
             curCmd = pipeFrom;
             pipeFrom = pipeFrom->pipeTo;
@@ -303,16 +315,16 @@ RunCmdBg(commandT* cmd)
 
 
 /*
- * ExecPipe
+ * RunCmdPipe
  *
  * arguments:
- *   commandT *cmd1: the commandT struct for the left hand side of the pipe
- *   commandT *cmd2: the commandT struct for the right hand side of the pipe
+ *   commandT *cmd1: the commandT struct representing the left hand side of the first pipe
+ *   bool forceFork: whether to fork
+ *   bool bg: whether the cmd should be backgrounded
  *
  * returns: none
  *
- * Runs two commands, redirecting standard output from the first to
- * standard input on the second.
+ * Runs a sequence of commands, piping output from one to input of the next.
  */
 void
 RunCmdPipe(commandT* cmd1, bool forceFork, bool bg)
@@ -323,12 +335,11 @@ RunCmdPipe(commandT* cmd1, bool forceFork, bool bg)
   
   commandT* curCmd;
   
-  //pipe(pipeID);
-  
   for (curCmd = cmd1; curCmd != NULL; ) {
     if (op == WRITE) {
       pipe(pipeID);
       ExecPipe(curCmd, pipeID, pipeID2, WRITE);
+      sleep(1);
       curCmd = curCmd->pipeTo;
       if (curCmd->pipeTo) {
         op = READWRITE;
@@ -338,9 +349,11 @@ RunCmdPipe(commandT* cmd1, bool forceFork, bool bg)
     } else if (op == READWRITE) {
       pipe(pipeID2);
       ExecPipe(curCmd, pipeID, pipeID2, READWRITE);
+      sleep(1);
+      fflush(stdout);
       close(pipeID[0]);
       close(pipeID[1]);
-      //fflush(stdout);
+      
       pipeID[0] = pipeID2[0];
       pipeID[1] = pipeID2[1];
       curCmd = curCmd->pipeTo;
@@ -365,6 +378,19 @@ RunCmdPipe(commandT* cmd1, bool forceFork, bool bg)
   fflush(stdout);
 } /* RunCmdPipe */
 
+/*
+ * ExecPipe
+ *
+ * arguments:
+ *   commandT *cmd: the command to execute
+ *   int pipeID: the first pipe
+ *   int pipeID: the second pipe, if both input and output are going through pipes
+ *   pipeop_t op: indicates what pipe ends should be used
+ *
+ * returns: none
+ *
+ * Executes a command, redirecting input/output to pipes as necessary.
+ */
 void
 ExecPipe(commandT *cmd, int pipeID[2], int pipeID2[2], pipeop_t op)
 {
@@ -394,7 +420,7 @@ ExecPipe(commandT *cmd, int pipeID[2], int pipeID2[2], pipeop_t op)
       close(0); // stdin
       dup(pipeID[0]);
       close(pipeID[0]);
-      close(1);
+      close(1); // stdout
       dup(pipeID2[1]);
       close(pipeID2[1]);
     }
@@ -402,7 +428,7 @@ ExecPipe(commandT *cmd, int pipeID[2], int pipeID2[2], pipeop_t op)
     
   } else {
     sigprocmask(SIG_UNBLOCK, &mask, NULL);
-    waitpid(pid, &status, WNOHANG);
+    waitpid(pid,&status,WNOHANG);
   }
 } /* ExecPipe */
 
